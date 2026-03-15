@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -359,16 +360,82 @@ HELP_TEXT = """
   SELECT httpRequest.clientIp, httpRequest.uri, httpRequest.country
     FROM waf_logs WHERE action = 'BLOCK' LIMIT 20;
 
-  .tables  テーブル・ビュー一覧
-  .schema  テーブルのスキーマ表示
-  .help    このヘルプを表示
-  .quit    終了
+=== コマンド ===
+  .claude <質問>  claude に分析を依頼
+  .tables         テーブル・ビュー一覧
+  .schema         テーブルのスキーマ表示
+  .help           このヘルプを表示
+  .quit           終了
 """
 
 
-def sql_shell(db: duckdb.DuckDBPyConnection) -> None:
+def _build_claude_context(db_path: str, summary: str) -> str:
+    """claude に渡す初回コンテキストを構築する"""
+    venv_hint = ""
+    if sys.prefix != sys.base_prefix:
+        activate = Path(sys.prefix) / "bin" / "activate"
+        venv_hint = (
+            "venv 環境で実行しています。duckdb コマンドを使う前に "
+            f"activate してください:\n  source {activate}\n"
+        )
+
+    return f"""WAF ログが DuckDB に取り込まれています。分析を手伝ってください。
+
+DB ファイル: {db_path}
+{venv_hint}
+{summary}
+
+利用可能なビュー:
+  top_blocked      ブロックされたリクエストの IP 別集計
+  top_rules        マッチしたルール別集計
+  top_uri          URI 別リクエスト数
+  timeline         5分間隔の時系列リクエスト数
+  top_countries    国別リクエスト数
+  blocked_details  ブロックされたリクエストの詳細
+
+duckdb コマンドで SQL を実行して分析してください。"""
+
+
+def _ask_claude(
+    message: str,
+    db_path: str,
+    summary: str,
+    session_id: str,
+    is_first: bool,
+) -> None:
+    """claude -p でメッセージを送り、応答を表示する。"""
+    if not shutil.which("claude"):
+        print("エラー: claude コマンドが見つかりません", file=sys.stderr)
+        return
+
+    cmd = ["claude", "-p", "--session-id", session_id]
+    if not is_first:
+        cmd.append("--resume")
+
+    if is_first:
+        context = _build_claude_context(db_path, summary)
+        prompt = f"{context}\n\n---\n\n{message}"
+    else:
+        prompt = message
+
+    cmd.append(prompt)
+
+    result = subprocess.run(cmd, text=True)
+
+    if result.returncode != 0:
+        print("エラー: claude の実行に失敗しました", file=sys.stderr)
+
+
+def sql_shell(
+    db: duckdb.DuckDBPyConnection,
+    db_path: str,
+    summary: str,
+) -> None:
     """対話的 SQL シェルを起動する"""
     print(HELP_TEXT)
+
+    claude_session_id = uuid.uuid4().hex[:8]
+    claude_first = True
 
     while True:
         try:
@@ -392,6 +459,19 @@ def sql_shell(db: duckdb.DuckDBPyConnection) -> None:
             continue
         if query.lower() == ".schema":
             db.execute("DESCRIBE waf_logs").show()
+            continue
+
+        # .claude コマンド
+        if query.lower().startswith(".claude"):
+            message = query[len(".claude"):].strip()
+            if not message:
+                print("使い方: .claude <質問>")
+                continue
+            _ask_claude(
+                message, db_path, summary,
+                claude_session_id, claude_first,
+            )
+            claude_first = False
             continue
 
         # セミコロンで終わるまで複数行入力
@@ -515,39 +595,6 @@ def _get_summary_text(db: duckdb.DuckDBPyConnection) -> str:
     return "\n".join(lines)
 
 
-def launch_claude(db_path: str, summary: str) -> None:
-    """claude コマンドを WAF ログ分析コンテキスト付きで起動する"""
-    if not shutil.which("claude"):
-        die("claude コマンドが見つかりません")
-
-    # venv 環境の場合は activate コマンドを案内
-    venv_hint = ""
-    if sys.prefix != sys.base_prefix:
-        activate = Path(sys.prefix) / "bin" / "activate"
-        venv_hint = f"""
-venv 環境で実行しています。duckdb コマンドを使う前に activate してください:
-  source {activate}
-"""
-
-    prompt = f"""WAF ログが DuckDB に取り込まれています。分析を手伝ってください。
-
-DB ファイル: {db_path}
-{venv_hint}
-{summary}
-
-利用可能なビュー:
-  top_blocked      ブロックされたリクエストの IP 別集計
-  top_rules        マッチしたルール別集計
-  top_uri          URI 別リクエスト数
-  timeline         5分間隔の時系列リクエスト数
-  top_countries    国別リクエスト数
-  blocked_details  ブロックされたリクエストの詳細
-
-duckdb コマンドで SQL を実行して分析してください。"""
-
-    subprocess.run(["claude", prompt])
-
-
 def main() -> None:
     args = parse_args()
 
@@ -592,20 +639,10 @@ def main() -> None:
     if db_path != ":memory:":
         print(f"-- DB ファイル: {db_path}")
 
-    # --- 対話モード選択 ---
+    # SQL シェル起動（.claude コマンドで AI 分析も可能）
     summary = _get_summary_text(db)
+    sql_shell(db, db_path, summary)
     db.close()
-
-    mode = pick_one("分析モードを選択", ["SQL シェル", "claude (AI 分析)"])
-    if mode == "SQL シェル":
-        db = duckdb.connect(db_path)
-        create_views(db)
-        sql_shell(db)
-        db.close()
-    else:
-        if db_path == ":memory:":
-            die("claude モードではインメモリ DB は使用できません (--memory を外してください)")
-        launch_claude(db_path, summary)
 
 
 def _fetch_log_files(args: argparse.Namespace) -> list[Path]:
