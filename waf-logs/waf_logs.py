@@ -408,17 +408,12 @@ def _ask_claude(
         print("エラー: claude コマンドが見つかりません", file=sys.stderr)
         return
 
-    cmd = ["claude", "-p", "--session-id", session_id]
-    if not is_first:
-        cmd.append("--resume")
-
     if is_first:
         context = _build_claude_context(db_path, summary)
         prompt = f"{context}\n\n---\n\n{message}"
+        cmd = ["claude", "-p", "--session-id", session_id, prompt]
     else:
-        prompt = message
-
-    cmd.append(prompt)
+        cmd = ["claude", "-p", "-r", session_id, message]
 
     result = subprocess.run(cmd, text=True)
 
@@ -434,7 +429,7 @@ def sql_shell(
     """対話的 SQL シェルを起動する"""
     print(HELP_TEXT)
 
-    claude_session_id = uuid.uuid4().hex[:8]
+    claude_session_id = str(uuid.uuid4())
     claude_first = True
 
     while True:
