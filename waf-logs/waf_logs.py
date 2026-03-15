@@ -396,14 +396,14 @@ DB ファイル: {db_path}
 duckdb コマンドで SQL を実行して分析してください。"""
 
 
-def _ask_claude(
+def _launch_claude(
     message: str,
     db_path: str,
     summary: str,
     session_id: str,
     is_first: bool,
 ) -> None:
-    """claude -p でメッセージを送り、応答を表示する。"""
+    """claude を対話的に起動する。終了後に SQL シェルに戻る。"""
     if not shutil.which("claude"):
         print("エラー: claude コマンドが見つかりません", file=sys.stderr)
         return
@@ -411,14 +411,12 @@ def _ask_claude(
     if is_first:
         context = _build_claude_context(db_path, summary)
         prompt = f"{context}\n\n---\n\n{message}"
-        cmd = ["claude", "-p", "--session-id", session_id, prompt]
+        cmd = ["claude", "--session-id", session_id, prompt]
     else:
-        cmd = ["claude", "-p", "-r", session_id, message]
+        cmd = ["claude", "-r", session_id, message]
 
-    result = subprocess.run(cmd, text=True)
-
-    if result.returncode != 0:
-        print("エラー: claude の実行に失敗しました", file=sys.stderr)
+    subprocess.run(cmd)
+    print("\n-- SQL シェルに戻りました (.help でヘルプ表示)")
 
 
 def sql_shell(
@@ -462,7 +460,7 @@ def sql_shell(
             if not message:
                 print("使い方: .claude <質問>")
                 continue
-            _ask_claude(
+            _launch_claude(
                 message, db_path, summary,
                 claude_session_id, claude_first,
             )
