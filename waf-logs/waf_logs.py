@@ -445,13 +445,13 @@ def sql_shell(
             print(HELP_TEXT)
             continue
         if query.lower() == ".tables":
-            db.execute(
+            db.sql(
                 "SELECT table_name, table_type FROM information_schema.tables "
                 "WHERE table_schema = 'main' ORDER BY table_type, table_name"
             ).show()
             continue
         if query.lower() == ".schema":
-            db.execute("DESCRIBE waf_logs").show()
+            db.sql("DESCRIBE waf_logs").show()
             continue
 
         # .claude コマンド
@@ -484,9 +484,8 @@ def sql_shell(
             continue
 
         try:
-            result = db.execute(query)
-            if result.description:
-                result.show()
+            result = db.sql(query)
+            result.show()
         except Exception as e:
             print(f"エラー: {e}", file=sys.stderr)
 
