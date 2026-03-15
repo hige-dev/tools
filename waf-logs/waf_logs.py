@@ -460,11 +460,15 @@ def sql_shell(
             if not message:
                 print("使い方: .claude <質問>")
                 continue
+            # claude が DB にアクセスできるようロックを解放
+            db.close()
             _launch_claude(
                 message, db_path, summary,
                 claude_session_id, claude_first,
             )
             claude_first = False
+            db = duckdb.connect(db_path)
+            create_views(db)
             continue
 
         # セミコロンで終わるまで複数行入力
