@@ -494,7 +494,7 @@ def _get_summary_text(db: duckdb.DuckDBPyConnection) -> str:
         "max(to_timestamp(timestamp / 1000)) FROM waf_logs"
     ).fetchone()
     schema = db.execute(
-        "SELECT column_name, column_type FROM information_schema.columns "
+        "SELECT column_name, data_type FROM information_schema.columns "
         "WHERE table_name = 'waf_logs' ORDER BY ordinal_position"
     ).fetchall()
 
@@ -520,11 +520,19 @@ def launch_claude(db_path: str, summary: str) -> None:
     if not shutil.which("claude"):
         die("claude コマンドが見つかりません")
 
+    # venv 環境の場合は activate コマンドを案内
+    venv_hint = ""
+    if sys.prefix != sys.base_prefix:
+        activate = Path(sys.prefix) / "bin" / "activate"
+        venv_hint = f"""
+venv 環境で実行しています。duckdb コマンドを使う前に activate してください:
+  source {activate}
+"""
+
     prompt = f"""WAF ログが DuckDB に取り込まれています。分析を手伝ってください。
 
 DB ファイル: {db_path}
-接続コマンド: duckdb {db_path}
-
+{venv_hint}
 {summary}
 
 利用可能なビュー:

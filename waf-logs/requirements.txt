@@ -1,3 +1,4 @@
 boto3
 duckdb
 pytz
+duckdb-cli
