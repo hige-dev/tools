@@ -495,6 +495,54 @@ def sql_shell(
 # ---------------------------------------------------------------------------
 
 
+def _warn_sensitive_headers(db: duckdb.DuckDBPyConnection) -> None:
+    """Cookie や Authorization ヘッダーがリダクトされていない場合に警告する"""
+    try:
+        rows = db.execute(
+            """
+            SELECT DISTINCT lower(h.name) AS header_name
+            FROM waf_logs,
+                 LATERAL unnest(httpRequest.headers) AS h
+            WHERE lower(h.name) IN ('cookie', 'authorization', 'x-api-key')
+              AND h.value IS NOT NULL
+              AND h.value != ''
+              AND h.value != '-'
+            LIMIT 1
+            """
+        ).fetchall()
+    except Exception:
+        return
+
+    if not rows:
+        return
+
+    found = [r[0] for r in rows]
+    header_list = ", ".join(found)
+
+    print(
+        "\n"
+        "╔══════════════════════════════════════════════════════════════╗\n"
+        "║  ⚠  警告: 機微情報がリダクトされていません                 ║\n"
+        "╠══════════════════════════════════════════════════════════════╣\n"
+        "║                                                            ║\n"
+        f"║  検出ヘッダー: {header_list:<44}║\n"
+        "║                                                            ║\n"
+        "║  WAF ログにセッション ID やトークンなどの機微情報が        ║\n"
+        "║  平文で含まれています。このデータはローカルの DuckDB       ║\n"
+        "║  ファイルおよび /tmp の一時ファイルに保存されます。        ║\n"
+        "║                                                            ║\n"
+        "║  対策:                                                     ║\n"
+        "║   1. AWS WAF コンソールでログ設定の「Redacted fields」に   ║\n"
+        "║      Cookie / Authorization ヘッダーを追加してください     ║\n"
+        "║   2. 分析完了後、DB ファイルと /tmp/waf-logs-* を          ║\n"
+        "║      速やかに削除してください                              ║\n"
+        "║   3. --memory オプションでファイルに残さず分析できます     ║\n"
+        "║                                                            ║\n"
+        "╚══════════════════════════════════════════════════════════════╝",
+        file=sys.stderr,
+    )
+
+
 def print_summary(db: duckdb.DuckDBPyConnection) -> None:
     """取り込んだログの概要を表示する"""
     total = db.execute("SELECT count(*) FROM waf_logs").fetchone()[0]
@@ -628,6 +676,9 @@ def main() -> None:
         create_views(db)
     except Exception as e:
         print(f"警告: 一部のビュー作成に失敗しました: {e}", file=sys.stderr)
+
+    # 機微情報の警告チェック
+    _warn_sensitive_headers(db)
 
     # 概要表示
     print_summary(db)
