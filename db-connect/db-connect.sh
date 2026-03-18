@@ -71,10 +71,9 @@ aws_cmd() {
 init_config() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         echo "設定ファイルが見つかりません: ${CONFIG_FILE}"
-        echo "サンプルを作成しますか？ [Y/n]"
         local answer
-        read -r answer
-        if [[ "$answer" =~ ^[Nn] ]]; then
+        answer=$(pick_one "サンプルを作成しますか？" "yes" "no") || die "選択がキャンセルされました"
+        if [[ "$answer" != "yes" ]]; then
             die "設定ファイルを作成してから再実行してください"
         fi
         cat > "$CONFIG_FILE" << 'SAMPLE'
@@ -136,10 +135,9 @@ select_bastion() {
 
     if [[ -n "$default_bastion" ]]; then
         echo "踏み台インスタンス: ${default_bastion} (設定ファイルのデフォルト)" >&2
-        echo "このまま使用しますか？ [Y/n]" >&2
         local answer
-        read -r answer
-        if [[ ! "$answer" =~ ^[Nn] ]]; then
+        answer=$(pick_one "このまま使用しますか？" "yes - ${default_bastion} を使用" "no - 一覧から選択") || die "選択がキャンセルされました"
+        if [[ "$answer" == "yes"* ]]; then
             echo "$default_bastion"
             return
         fi
