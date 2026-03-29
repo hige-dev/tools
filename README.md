@@ -11,6 +11,12 @@ AWS 運用や日常業務で使う CLI ツール集。
 | [`db_connect`](db-connect/) | SSM 経由の踏み台ログイン・RDS ポートフォワード |
 | [`waf_logs`](waf-logs/) | WAF ログを S3 から取得し DuckDB で対話的に分析 |
 
+## その他
+
+| ツール | 説明 |
+|---|---|
+| [`ai-analytics`](ai-analytics/) | Claude Code の利用データを DuckDB / Langfuse に蓄積・分析 |
+
 ## インストール
 
 ```bash
