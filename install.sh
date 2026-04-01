@@ -18,6 +18,7 @@ declare -A TOOLS=(
     [ecs_exec]="ecs-exec/ecs-exec.sh"
     [db_connect]="db-connect/db-connect.sh"
     [waf_logs]="waf-logs/waf_logs.py"
+    [devops_agent]="devops-agent/devops-agent.sh"
 )
 
 install_links() {
