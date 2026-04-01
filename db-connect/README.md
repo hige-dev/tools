@@ -1,4 +1,5 @@
 # db-connect
+![demo](./db_connect.gif)
 
 SSM 経由で踏み台インスタンスにログイン、または RDS へのポートフォワードを対話的に確立する。
 

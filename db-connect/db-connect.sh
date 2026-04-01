@@ -252,7 +252,13 @@ main() {
 
     if [[ "$mode" == "login" ]]; then
         # --- 踏み台ログイン ---
-        echo "=> aws ssm start-session --target ${bastion}"
+        local cmd="aws ssm start-session${AWS_PROFILE:+ --profile ${AWS_PROFILE}} --target ${bastion}"
+        echo ""
+        echo "─── コマンド ────────────────────────────────"
+        echo ""
+        echo "${cmd}"
+        echo ""
+        echo "──────────────────────────────────────────────"
         echo ""
         aws ssm start-session \
             ${AWS_PROFILE:+--profile "$AWS_PROFILE"} \
@@ -292,23 +298,33 @@ main() {
         echo "-- RDS: ${rds_endpoint}:${remote_port}"
         echo "-- ローカルポート: ${local_port}"
         echo ""
-        echo "=> ポートフォワードを開始します"
-        echo "   localhost:${local_port} -> ${rds_endpoint}:${remote_port}"
+        local cmd="aws ssm start-session${AWS_PROFILE:+ --profile ${AWS_PROFILE}} --target ${bastion} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters '{\"host\":[\"${rds_endpoint}\"],\"portNumber\":[\"${remote_port}\"],\"localPortNumber\":[\"${local_port}\"]}'"
         echo ""
-        echo "   接続例:"
+        echo "=== コマンド ================================"
+        echo ""
+        echo "${cmd}"
+        echo ""
+        echo "=== 接続先 =================================="
+        echo ""
+        echo "localhost:${local_port} -> ${rds_endpoint}:${remote_port}"
+        echo ""
+        echo "=== 接続例 =================================="
+        echo ""
         case "${remote_port}" in
             5432)
-                echo "     psql -h 127.0.0.1 -p ${local_port} -U <USER> <DB_NAME>"
+                echo "psql -h localhost -p ${local_port} -U <USER> <DB_NAME>"
                 ;;
             3306)
-                echo "     mysql -h 127.0.0.1 -P ${local_port} -u <USER> -p <DB_NAME>"
+                echo "mysql -h localhost -P ${local_port} -u <USER> -p <DB_NAME>"
                 ;;
             *)
-                echo "     <client> -h 127.0.0.1 -p ${local_port}"
+                echo "<client> -h localhost -p ${local_port}"
                 ;;
         esac
         echo ""
-        echo "   Ctrl+C で切断します"
+        echo "============================================="
+        echo ""
+        echo "Ctrl+C で切断します"
         echo ""
 
         aws ssm start-session \
