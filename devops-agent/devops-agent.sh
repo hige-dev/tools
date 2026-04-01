@@ -9,7 +9,7 @@
 #   ./devops-agent.sh [サブコマンド]
 #
 # サブコマンド:
-#   setup          サービスモデルのインストール・IAM ロール作成
+#   setup          AWS CLI 確認・IAM ロール作成
 #   spaces         Agent Space の一覧表示
 #   create-space   Agent Space の作成
 #   delete-space   Agent Space の削除
@@ -25,17 +25,24 @@
 #   ~/.config/devops-agent/config.json
 #
 # 必要なもの:
-#   - AWS CLI v2
+#   - AWS CLI v2 (devops-agent サービス組み込み済み)
 #   - jq
-#   - curl (setup 時)
 #   - fzf (任意: インストール済みなら自動で使用)
 #
 
 set -euo pipefail
 
-ENDPOINT_URL="https://api.prod.cp.aidevops.us-east-1.api.aws"
-REGION="us-east-1"
-SERVICE_MODEL_URL="https://d1co8nkiwcta1g.cloudfront.net/devopsagent.json"
+REGION="${AWS_DEVOPS_AGENT_REGION:-us-east-1}"
+
+# 対応リージョン
+SUPPORTED_REGIONS=(
+    "us-east-1"
+    "us-west-2"
+    "ap-northeast-1"
+    "ap-southeast-2"
+    "eu-central-1"
+    "eu-west-1"
+)
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/devops-agent"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
@@ -89,9 +96,8 @@ confirm() {
 }
 
 aws_da() {
-    aws devopsagent "$@" \
+    aws devops-agent "$@" \
         ${AWS_PROFILE:+--profile "$AWS_PROFILE"} \
-        --endpoint-url "$ENDPOINT_URL" \
         --region "$REGION" \
         --output json
 }
@@ -198,30 +204,14 @@ select_agent_space() {
 cmd_setup() {
     header "初期セットアップ"
 
-    # 1. サービスモデルのインストール
-    echo "1) AWS CLI サービスモデルのインストール"
+    # AWS CLI で devops-agent が使えるか確認
+    echo "1) AWS CLI 確認"
     echo ""
 
-    if aws devopsagent help >/dev/null 2>&1; then
-        info "サービスモデルは既にインストール済みです"
+    if aws devops-agent help >/dev/null 2>&1; then
+        info "aws devops-agent コマンドが利用可能です"
     else
-        command -v curl >/dev/null 2>&1 || die "curl がインストールされていません"
-
-        local tmpfile
-        tmpfile=$(mktemp /tmp/devopsagent-XXXXXX.json)
-        trap "rm -f '$tmpfile'" EXIT
-
-        info "サービスモデルをダウンロード中..."
-        curl -sL "$SERVICE_MODEL_URL" -o "$tmpfile" \
-            || die "サービスモデルのダウンロードに失敗しました"
-
-        info "AWS CLI に追加中..."
-        aws configure add-model \
-            --service-model "file://${tmpfile}" \
-            --service-name devopsagent \
-            || die "サービスモデルの追加に失敗しました"
-
-        info "サービスモデルをインストールしました"
+        die "aws devops-agent コマンドが見つかりません。AWS CLI v2 を最新版に更新してください"
     fi
 
     echo ""
@@ -246,16 +236,24 @@ cmd_setup() {
         info "ロール ${role_name} を作成中..."
 
         local trust_policy
-        trust_policy=$(cat <<'POLICY'
+        trust_policy=$(cat <<POLICY
 {
     "Version": "2012-10-17",
     "Statement": [
         {
             "Effect": "Allow",
             "Principal": {
-                "Service": "aiops.amazonaws.com"
+                "Service": "aidevops.amazonaws.com"
             },
-            "Action": "sts:AssumeRole"
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "${ACCOUNT_ID}"
+                },
+                "ArnLike": {
+                    "aws:SourceArn": "arn:aws:aidevops:${REGION}:${ACCOUNT_ID}:agentspace/*"
+                }
+            }
         }
     ]
 }
@@ -270,8 +268,33 @@ POLICY
 
         aws_iam attach-role-policy \
             --role-name "$role_name" \
-            --policy-arn "arn:aws:iam::aws:policy/AIOpsAssistantPolicy" \
+            --policy-arn "arn:aws:iam::aws:policy/AIDevOpsAgentAccessPolicy" \
             || die "ポリシーのアタッチに失敗しました"
+
+        # Resource Explorer 用 Service-Linked Role 作成権限
+        local slr_policy
+        slr_policy=$(cat <<POLICY
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowCreateServiceLinkedRoles",
+            "Effect": "Allow",
+            "Action": ["iam:CreateServiceLinkedRole"],
+            "Resource": [
+                "arn:aws:iam::${ACCOUNT_ID}:role/aws-service-role/resource-explorer-2.amazonaws.com/AWSServiceRoleForResourceExplorer"
+            ]
+        }
+    ]
+}
+POLICY
+)
+
+        aws_iam put-role-policy \
+            --role-name "$role_name" \
+            --policy-name "AllowCreateServiceLinkedRoles" \
+            --policy-document "$slr_policy" \
+            || die "インラインポリシーの追加に失敗しました"
 
         info "ロール ${role_name} を作成しました"
     fi
@@ -292,26 +315,20 @@ POLICY
         {
             "Effect": "Allow",
             "Principal": {
-                "AWS": "arn:aws:iam::${ACCOUNT_ID}:root"
+                "Service": "aidevops.amazonaws.com"
             },
-            "Action": "sts:AssumeRole"
-        }
-    ]
-}
-POLICY
-)
-
-        local operator_inline_policy
-        operator_inline_policy=$(cat <<'POLICY'
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
             "Action": [
-                "aiops:*"
+                "sts:AssumeRole",
+                "sts:TagSession"
             ],
-            "Resource": "*"
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "${ACCOUNT_ID}"
+                },
+                "ArnLike": {
+                    "aws:SourceArn": "arn:aws:aidevops:${REGION}:${ACCOUNT_ID}:agentspace/*"
+                }
+            }
         }
     ]
 }
@@ -324,11 +341,10 @@ POLICY
             >/dev/null \
             || die "Operator ロールの作成に失敗しました"
 
-        aws_iam put-role-policy \
+        aws_iam attach-role-policy \
             --role-name "$operator_role_name" \
-            --policy-name "AIDevOpsBasicOperatorActionsPolicy" \
-            --policy-document "$operator_inline_policy" \
-            || die "Operator ポリシーの追加に失敗しました"
+            --policy-arn "arn:aws:iam::aws:policy/AIDevOpsOperatorAppAccessPolicy" \
+            || die "Operator ポリシーのアタッチに失敗しました"
 
         info "ロール ${operator_role_name} を作成しました"
     fi
@@ -461,8 +477,7 @@ cmd_associate_aws() {
     "aws": {
         "assumableRoleArn": "${role_arn}",
         "accountId": "${ACCOUNT_ID}",
-        "accountType": "monitor",
-        "resources": []
+        "accountType": "monitor"
     }
 }
 JSON
@@ -667,7 +682,7 @@ AWS DevOps Agent CLI ラッパー
 Usage: devops-agent [サブコマンド]
 
 サブコマンド:
-  setup          初期セットアップ (サービスモデル・IAM ロール)
+  setup          初期セットアップ (AWS CLI 確認・IAM ロール)
   spaces         Agent Space の一覧表示
   create-space   Agent Space の作成
   delete-space   Agent Space の削除
@@ -678,13 +693,14 @@ Usage: devops-agent [サブコマンド]
   help           このヘルプを表示
 
 環境変数:
-  AWS_PROFILE    使用する AWS プロファイル
+  AWS_PROFILE              使用する AWS プロファイル
+  AWS_DEVOPS_AGENT_REGION  リージョン (デフォルト: us-east-1)
 
 設定ファイル:
   ~/.config/devops-agent/config.json
 
 初回利用の流れ:
-  1. devops-agent setup          # サービスモデル・IAM ロール作成
+  1. devops-agent setup          # AWS CLI 確認・IAM ロール作成
   2. devops-agent create-space   # Agent Space を作成
   3. devops-agent associate-aws  # AWS アカウントを連携
   4. devops-agent associate-gh   # GitHub リポジトリを連携
