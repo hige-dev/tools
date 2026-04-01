@@ -63,7 +63,7 @@ logs/
 | 変数 | 説明 | デフォルト |
 |------|------|-----------|
 | `GH_AUTHOR` | GitHub ユーザー名 | `gh` の認証ユーザーを自動取得 |
-| `REPORT_DIR` | 出力先ディレクトリ | カレントディレクトリ |
+| `REPORT_DIR` | 出力先ディレクトリ | スクリプトと同階層の `logs/` |
 | `HIST_FILE` | zsh 履歴ファイルのパス | `~/.zsh_history` |
 | `CLAUDE_HISTORY` | Claude Code 履歴ファイルのパス | `~/.claude/history.jsonl` |
 | `SLACK_TOKEN` | Slack User Token | 未設定（Slack 収集を無効化） |
