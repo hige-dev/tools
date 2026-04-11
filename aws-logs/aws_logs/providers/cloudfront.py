@@ -251,6 +251,42 @@ class CloudFrontProvider(LogProvider):
             "breakdown_label": "ステータス別",
         }
 
+    def warn_sensitive_data(self, db: duckdb.DuckDBPyConnection) -> None:
+        """cs_cookie カラムに機微情報が含まれていないかチェックする"""
+        try:
+            rows = db.execute(
+                """
+                SELECT 1 FROM cf_logs
+                WHERE cs_cookie IS NOT NULL
+                  AND cs_cookie != '-'
+                  AND cs_cookie != ''
+                LIMIT 1
+                """
+            ).fetchall()
+        except Exception:
+            return
+
+        if not rows:
+            return
+
+        print(
+            "\n"
+            "╔══════════════════════════════════════════════════════════════╗\n"
+            "║  ⚠  警告: Cookie 情報がログに含まれています               ║\n"
+            "╠══════════════════════════════════════════════════════════════╣\n"
+            "║                                                            ║\n"
+            "║  CloudFront ログの cs_cookie カラムにセッション ID 等の    ║\n"
+            "║  機微情報が平文で含まれている可能性があります。            ║\n"
+            "║                                                            ║\n"
+            "║  対策:                                                     ║\n"
+            "║   1. CloudFront のログ設定で Cookie ログを無効化する       ║\n"
+            "║   2. 分析完了後、DB ファイルを速やかに削除する            ║\n"
+            "║   3. --memory オプションでファイルに残さず分析する        ║\n"
+            "║                                                            ║\n"
+            "╚══════════════════════════════════════════════════════════════╝",
+            file=sys.stderr,
+        )
+
     # --- 内部メソッド ---
 
     def _list_distributions(self, session) -> list[dict]:
