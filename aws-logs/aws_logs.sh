@@ -1,6 +1,7 @@
 #!/bin/bash
 # aws_logs コマンドのエントリポイント
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# シンボリックリンクを解決して実体のディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH:-}"
 
 # venv の python を探す
