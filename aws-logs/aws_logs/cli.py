@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """aws-logs - AWS ログ分析ツール (WAF / CloudFront / ALB)"""
 
 import argparse
