@@ -6,10 +6,10 @@ AWS 運用や日常業務で使う CLI ツール集。
 
 | コマンド | 説明 |
 |---|---|
-| [`nippou`](nippou/) | GitHub コミット・シェル履歴・Slack メッセージから日報を自動生成 |
+| [`nippou`](nippou/) | GitHub コミット・シェル履歴・ClaudeCode対話履歴・Slack メッセージから日報を自動生成 |
 | [`ecs_exec`](ecs-exec/) | ECS タスクへの対話的な接続ラッパー |
 | [`db_connect`](db-connect/) | SSM 経由の踏み台ログイン・RDS ポートフォワード |
-| [`waf_logs`](waf-logs/) | WAF ログを S3 から取得し DuckDB で対話的に分析 |
+| [`aws_logs`](aws-logs/) | WAF, Cloudfront, ALB ログを S3 から取得し DuckDB で対話的に分析 |
 | [`devops_agent`](devops-agent/) | AWS DevOps Agent の対話型 CLI ラッパー |
 
 ## その他
