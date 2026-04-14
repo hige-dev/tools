@@ -117,13 +117,19 @@ def parse_args() -> argparse.Namespace:
             metavar="PATH",
             help=(
                 "DuckDB ファイルパス。既存ファイルを指定すると\n"
-                "ログ取得をスキップして即座に分析を開始する\n"
-                "(デフォルト: /tmp/{name}-{timestamp}.duckdb)"
+                "ログ取得をスキップして即座に分析を開始する"
             ),
         )
         db_group.add_argument(
             "--memory", action="store_true",
             help="インメモリモード (DB ファイルをディスクに残さない)",
+        )
+        db_group.add_argument(
+            "--keep-db", action="store_true",
+            help=(
+                "終了時に DB ファイルを削除しない\n"
+                "(デフォルトでは /tmp に一時作成し終了時に削除)"
+            ),
         )
 
         if is_s3:
@@ -215,6 +221,8 @@ def run(args: argparse.Namespace, provider: LogProvider) -> None:
     """共通のログ分析フロー"""
     # DB パスの決定
     db_path = resolve_db_path(args.db, args.memory, provider.table_name)
+    # --db 指定 or --keep-db の場合は終了時に残す
+    should_keep = args.db is not None or args.memory or args.keep_db
     db = create_db(db_path)
 
     # 既存テーブルチェック
@@ -288,12 +296,27 @@ def run(args: argparse.Namespace, provider: LogProvider) -> None:
     _print_summary(db, provider)
 
     if db_path != ":memory:":
-        print(f"-- DB ファイル: {db_path}")
+        if should_keep:
+            print(f"-- DB ファイル: {db_path}")
+        else:
+            print(f"-- DB ファイル: {db_path} (終了時に削除されます。--keep-db で保持)")
 
     # SQL シェル起動
     summary = _get_summary_text(db, provider)
     sql_shell(db, db_path, summary, provider)
     db.close()
+
+    # 一時 DB ファイルの削除
+    if not should_keep and db_path != ":memory:":
+        db_file = Path(db_path)
+        if db_file.exists():
+            db_file.unlink()
+            print(f"-- DB ファイルを削除しました: {db_path}")
+        # DuckDB の WAL / tmp ファイルも削除
+        for suffix in (".wal", ".tmp"):
+            wal = db_file.with_suffix(db_file.suffix + suffix)
+            if wal.exists():
+                wal.unlink()
 
 
 def _fetch_local_files(args: argparse.Namespace, provider: LogProvider) -> list[Path]:
