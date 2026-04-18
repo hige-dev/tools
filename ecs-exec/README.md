@@ -28,7 +28,7 @@ ecs_exec <aws-profile>
 
 サービスの `enableExecuteCommand=false` を検知した場合、以下を提示する:
 
-1. **一時デバッグタスク (netshoot) を起動** — 同じネットワーク設定で `nicolaka/netshoot` を独立タスクとして `run-task` 起動し、自動で接続。セッション終了時に自動停止
+1. **一時デバッグタスクを起動** — 同じネットワーク設定で独立したデバッグコンテナ (デフォルトは `debian:stable-slim` + ネットワークツール) を `run-task` 起動し、自動で接続。セッション終了時に自動停止
 2. **CloudShell VPC でネットワーク調査** — 対象タスクの VPC/Subnet/SG を表示し、CloudShell のコンソールを開く
 3. 中止
 
@@ -78,7 +78,7 @@ export ECS_DEBUG_TASK_TTL_SEC=3600  # 1時間
 
 ```bash
 aws ecs execute-command --cluster <cluster> --task <task-id> \
-  --container netshoot --interactive --command bash
+  --container debug --interactive --command bash
 ```
 
 流用するタスクロールが SSM メッセージング権限を持たない場合は接続に失敗します。その場合は環境変数で別ロールを指定:
